@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Analisis Data Pembacaan Meter</title>
+    <!-- Memuat Tailwind CSS untuk styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Memuat SheetJS (xlsx) untuk membaca file Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Memuat jsPDF untuk generate PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+    <!-- Memuat Chart.js untuk grafik -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Menggunakan font Inter untuk tampilan yang lebih modern */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5;
+        }
+        /* Style kustom untuk input file */
+        .file-input-label {
+            transition: all 0.2s ease-in-out;
+        }
+        .file-input-label:hover {
+            background-color: #3b82f6; /* bg-blue-600 */
+        }
+        /* Animasi sederhana untuk kartu hasil dan modal */
+        .result-card, .modal-content {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* Memastikan modal scrollable pada layar kecil */
+        .modal-body {
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-6 md:p-8">
+    <div class="max-w-7xl mx-auto bg-white rounded-2xl shadow-lg p-6 md:p-8">
+        
+        <!-- Judul Aplikasi -->
+        <div class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800">Aplikasi Filter & Analisis Data Meter</h1>
+            <p class="text-gray-500 mt-2">Unggah file Excel Anda untuk memulai analisis kondisi water meter.</p>
+        </div>
+
+        <!-- Panel Kontrol -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-end bg-gray-50 p-6 rounded-xl border border-gray-200 mb-8">
+            <!-- 1. Upload File -->
+            <div class="md:col-span-1">
+                <label class="block text-sm font-medium text-gray-700 mb-2">1. Unggah File Excel</label>
+                <label for="file-upload" class="file-input-label cursor-pointer bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg w-full text-center inline-block">
+                    Pilih File
+                </label>
+                <input id="file-upload" type="file" class="hidden" accept=".xlsx, .xls, .csv">
+                <p id="file-name" class="text-xs text-gray-500 mt-2 truncate">Belum ada file dipilih.</p>
+            </div>
+            
+            <!-- 2. Filter Petugas -->
+            <div class="md:col-span-1">
+                <label for="petugas-filter" class="block text-sm font-medium text-gray-700 mb-2">2. Filter Berdasarkan Petugas</label>
+                <select id="petugas-filter" class="w-full p-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500" disabled>
+                    <option>Unggah file dulu</option>
+                </select>
+            </div>
+
+            <!-- 3. Tombol Analisis -->
+            <div class="md:col-span-1">
+                 <button id="analyze-button" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300 shadow-md" disabled>
+                    Mulai Analisis
+                </button>
+            </div>
+        </div>
+
+        <!-- Area Hasil Analisis -->
+        <div id="results-area" class="hidden">
+            <!-- Ringkasan Status Meter -->
+            <div class="result-card mb-8">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Ringkasan Status Meter</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Kartu Meter Berfungsi -->
+                    <div class="bg-green-100 border-l-4 border-green-500 p-6 rounded-lg flex flex-col justify-between">
+                        <div>
+                            <h3 class="text-lg font-semibold text-green-800">Meter Berfungsi</h3>
+                            <p id="fungsi-count" class="text-4xl font-bold text-green-600">0</p>
+                        </div>
+                        <div class="mt-4 space-y-2">
+                            <div>
+                                <p class="text-sm text-gray-600">Total Pemakaian:</p>
+                                <p id="fungsi-pakai" class="text-xl font-bold text-green-700">0</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-600">Rata-rata Kubikasi:</p>
+                                <p id="fungsi-avg" class="text-xl font-bold text-green-700">0</p>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Kartu Meter Tidak Berfungsi -->
+                    <div class="bg-red-100 border-l-4 border-red-500 p-6 rounded-lg flex flex-col justify-between">
+                        <div>
+                            <h3 class="text-lg font-semibold text-red-800">Meter Tidak Berfungsi / Ada Kelainan</h3>
+                            <p id="tidak-fungsi-count" class="text-4xl font-bold text-red-600">0</p>
+                        </div>
+                        <div class="mt-4 space-y-2">
+                            <div>
+                                <p class="text-sm text-gray-600">Total Pemakaian:</p>
+                                <p id="tidak-fungsi-pakai" class="text-xl font-bold text-red-700">0</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-600">Rata-rata Kubikasi:</p>
+                                <p id="tidak-fungsi-avg" class="text-xl font-bold text-red-700">0</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Total Keseluruhan -->
+                <div class="mt-6 pt-6 border-t border-gray-200">
+                    <h3 class="text-xl font-bold text-gray-800 mb-4 text-center">Ringkasan Keseluruhan</h3>
+                    <div class="flex flex-col md:flex-row justify-around items-center bg-blue-50 p-4 rounded-lg shadow-sm gap-4">
+                        <!-- Total Pelanggan -->
+                        <div class="text-center">
+                            <p class="text-md font-medium text-blue-800">Total Pelanggan</p>
+                            <p id="total-pelanggan" class="text-2xl font-bold text-blue-600">0</p>
+                        </div>
+                        <!-- Total Kubikasi -->
+                        <div class="text-center">
+                            <p class="text-md font-medium text-blue-800">Total Kubikasi</p>
+                            <p id="total-kubikasi" class="text-2xl font-bold text-blue-600">0</p>
+                        </div>
+                        <!-- Rata-rata Kubikasi Keseluruhan -->
+                        <div class="text-center">
+                            <p class="text-md font-medium text-blue-800">Rata-rata Kubikasi</p>
+                            <p id="rata-rata-keseluruhan" class="text-2xl font-bold text-blue-600">0</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- [BARU] Rekapitulasi Tunggakan -->
+                <div class="mt-6 pt-6 border-t border-gray-200">
+                    <h3 class="text-xl font-bold text-gray-800 mb-4 text-center">Rekapitulasi Tunggakan</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="bg-green-50 p-4 rounded-lg shadow-sm text-center">
+                            <p class="text-md font-medium text-green-800">Tunggakan Meter Berfungsi</p>
+                            <p id="tunggakan-fungsi" class="text-2xl font-bold text-green-600">Rp 0</p>
+                        </div>
+                        <div class="bg-red-50 p-4 rounded-lg shadow-sm text-center">
+                            <p class="text-md font-medium text-red-800">Tunggakan Meter Kelainan</p>
+                            <p id="tunggakan-tidak-fungsi" class="text-2xl font-bold text-red-600">Rp 0</p>
+                        </div>
+                    </div>
+                    <div class="mt-4 bg-gray-800 text-white p-4 rounded-lg shadow-lg text-center">
+                        <p class="text-lg font-semibold">Total Seluruh Tunggakan</p>
+                        <p id="total-tunggakan" class="text-3xl font-bold">Rp 0</p>
+                    </div>
+                </div>
+                
+                 <!-- Grafik Statistik Kelainan per Petugas -->
+                <div class="result-card mt-8 pt-6 border-t border-gray-200">
+                    <h3 class="text-xl font-bold text-gray-800 mb-4 text-center">Statistik Kelainan per Petugas</h3>
+                    <div class="bg-gray-50 p-4 rounded-lg shadow-sm" style="height: 400px;">
+                        <canvas id="petugas-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detail Kelainan -->
+            <div class="result-card mt-8">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Rincian Jumlah & Nilai Kelainan (Klik untuk Detail)</h2>
+                <div id="kelainan-details" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                    <!-- Data kelainan akan dimasukkan di sini oleh JavaScript -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Pesan Status/Error -->
+        <div id="status-message" class="text-center text-yellow-600 mt-4"></div>
+
+        <!-- Copyright Footer -->
+        <div class="text-center mt-8 pt-6 border-t border-gray-200">
+             <p class="text-sm text-gray-500">Copyright &copy; 2025 by CELLO</p>
+        </div>
+    </div>
+
+    <!-- Modal untuk menampilkan rincian pelanggan -->
+    <div id="details-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
+        <div class="modal-content bg-white rounded-2xl shadow-xl w-full max-w-6xl">
+            <!-- Header Modal -->
+            <div class="flex justify-between items-center p-4 border-b">
+                <h3 id="modal-title" class="text-xl font-bold text-gray-800">Rincian Pelanggan</h3>
+                <button id="modal-close-button" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <!-- Body Modal -->
+            <div id="modal-body" class="p-6 modal-body">
+                <!-- Konten detail akan dimasukkan di sini -->
+            </div>
+            <!-- Footer Modal untuk Tombol Aksi -->
+            <div id="modal-footer" class="flex justify-end items-center p-4 border-t space-x-3">
+                <!-- Tombol Print dan PDF akan dimasukkan di sini -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Variabel global
+        let excelData = [];
+        let currentFilteredData = [];
+        let petugasChartInstance = null; // Variabel untuk menyimpan instance grafik
+
+        // Mengambil elemen-elemen dari DOM
+        const fileInput = document.getElementById('file-upload');
+        const fileNameDisplay = document.getElementById('file-name');
+        const petugasFilter = document.getElementById('petugas-filter');
+        const analyzeButton = document.getElementById('analyze-button');
+        const resultsArea = document.getElementById('results-area');
+        const statusMessage = document.getElementById('status-message');
+        const modal = document.getElementById('details-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalBody = document.getElementById('modal-body');
+        const modalFooter = document.getElementById('modal-footer');
+        const modalCloseButton = document.getElementById('modal-close-button');
+
+        // Event listeners
+        fileInput.addEventListener('change', handleFile);
+        analyzeButton.addEventListener('click', analyzeData);
+        modalCloseButton.addEventListener('click', closeModal);
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                closeModal();
+            }
+        });
+
+        function handleFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            fileNameDisplay.textContent = file.name;
+            statusMessage.textContent = 'Membaca file, mohon tunggu...';
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    excelData = XLSX.utils.sheet_to_json(worksheet);
+                    
+                    if(excelData.length === 0) throw new Error("File Excel kosong atau format tidak sesuai.");
+
+                    statusMessage.textContent = `File berhasil dimuat. Total ${excelData.length} baris data ditemukan.`;
+                    populateFilters();
+                    analyzeButton.disabled = false;
+                } catch (error) {
+                    console.error("Error reading Excel file:", error);
+                    statusMessage.textContent = `Error: ${error.message}. Pastikan format file benar.`;
+                    resetApp();
+                }
+            };
+            reader.onerror = () => {
+                statusMessage.textContent = 'Gagal membaca file.';
+                resetApp();
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function populateFilters() {
+            // Menggunakan 'Nama Petugas' sesuai header di file Excel
+            const petugas = [...new Set(excelData.map(row => row['Nama Petugas']).filter(Boolean))];
+
+            petugasFilter.innerHTML = '<option value="semua">Semua Petugas</option>';
+            petugas.sort().forEach(petugasNama => {
+                petugasFilter.innerHTML += `<option value="${petugasNama}">${petugasNama}</option>`;
+            });
+            petugasFilter.disabled = false;
+        }
+        
+        function analyzeData() {
+            const selectedPetugas = petugasFilter.value;
+
+            currentFilteredData = excelData.filter(row => {
+                // Menggunakan 'Nama Petugas' sesuai header di file Excel
+                const petugasMatch = selectedPetugas === 'semua' || row['Nama Petugas'] === selectedPetugas;
+                return petugasMatch;
+            });
+            
+            statusMessage.textContent = `Menampilkan hasil untuk ${currentFilteredData.length} data yang cocok.`;
+
+            let fungsiCount = 0;
+            let tidakFungsiCount = 0;
+            let fungsiPakaiSum = 0;
+            let tidakFungsiPakaiSum = 0;
+            let fungsiJumlahSum = 0; // [BARU] Total nominal untuk meter berfungsi
+            let tidakFungsiJumlahSum = 0; // [BARU] Total nominal untuk meter kelainan
+
+            const kelainanCounts = {}; 
+            const kelainanJumlahs = {}; // [BARU] Total nominal per jenis kelainan
+            const petugasKelainanCounts = {};
+
+            currentFilteredData.forEach(row => {
+                const kelainanValue = row.Kelainan ? String(row.Kelainan).trim() : '-';
+                const pemakaian = parseFloat(row.Pakai) || 0;
+                const jumlah = parseFloat(row.Jumlah) || 0; // [BARU] Ambil nilai nominal
+
+                if (kelainanValue && kelainanValue !== '-') {
+                    tidakFungsiCount++;
+                    tidakFungsiPakaiSum += pemakaian;
+                    tidakFungsiJumlahSum += jumlah; // [BARU] Akumulasi nominal kelainan
+                    
+                    kelainanCounts[kelainanValue] = (kelainanCounts[kelainanValue] || 0) + 1;
+                    kelainanJumlahs[kelainanValue] = (kelainanJumlahs[kelainanValue] || 0) + jumlah; // [BARU] Akumulasi nominal per kelainan
+
+                    const petugasNama = row['Nama Petugas'];
+                    if (petugasNama) {
+                        petugasKelainanCounts[petugasNama] = (petugasKelainanCounts[petugasNama] || 0) + 1;
+                    }
+                } else {
+                    fungsiCount++;
+                    fungsiPakaiSum += pemakaian;
+                    fungsiJumlahSum += jumlah; // [BARU] Akumulasi nominal berfungsi
+                }
+            });
+            
+            // [DIUBAH] Mengirim data nominal ke fungsi display
+            displayResults(
+                fungsiCount, tidakFungsiCount, kelainanCounts, 
+                fungsiPakaiSum, tidakFungsiPakaiSum, petugasKelainanCounts, 
+                fungsiJumlahSum, tidakFungsiJumlahSum, kelainanJumlahs
+            );
+        }
+
+        // [DIUBAH] Menambahkan parameter untuk data nominal
+        function displayResults(fungsi, tidakFungsi, kelainanData, fungsiPakai, tidakFungsiPakai, petugasKelainanCounts, fungsiJumlah, tidakFungsiJumlah, kelainanJumlahData) {
+            // Memperbarui jumlah dan total pemakaian
+            document.getElementById('fungsi-count').textContent = fungsi.toLocaleString('id-ID');
+            document.getElementById('tidak-fungsi-count').textContent = tidakFungsi.toLocaleString('id-ID');
+            document.getElementById('fungsi-pakai').textContent = fungsiPakai.toLocaleString('id-ID');
+            document.getElementById('tidak-fungsi-pakai').textContent = tidakFungsiPakai.toLocaleString('id-ID');
+
+            // Menghitung dan menampilkan rata-rata per kategori
+            const avgFungsi = fungsi > 0 ? (fungsiPakai / fungsi) : 0;
+            const avgTidakFungsi = tidakFungsi > 0 ? (tidakFungsiPakai / tidakFungsi) : 0;
+
+            document.getElementById('fungsi-avg').textContent = avgFungsi.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('tidak-fungsi-avg').textContent = avgTidakFungsi.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            // Menghitung dan menampilkan ringkasan keseluruhan
+            const totalPelanggan = fungsi + tidakFungsi;
+            const totalKubikasi = fungsiPakai + tidakFungsiPakai;
+            const avgKeseluruhan = totalPelanggan > 0 ? (totalKubikasi / totalPelanggan) : 0;
+            
+            document.getElementById('total-pelanggan').textContent = totalPelanggan.toLocaleString('id-ID');
+            document.getElementById('total-kubikasi').textContent = totalKubikasi.toLocaleString('id-ID');
+            document.getElementById('rata-rata-keseluruhan').textContent = avgKeseluruhan.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            // [BARU] Menampilkan rekap tunggakan
+            document.getElementById('tunggakan-fungsi').textContent = 'Rp ' + fungsiJumlah.toLocaleString('id-ID');
+            document.getElementById('tunggakan-tidak-fungsi').textContent = 'Rp ' + tidakFungsiJumlah.toLocaleString('id-ID');
+            document.getElementById('total-tunggakan').textContent = 'Rp ' + (fungsiJumlah + tidakFungsiJumlah).toLocaleString('id-ID');
+
+            const kelainanDetailsContainer = document.getElementById('kelainan-details');
+            kelainanDetailsContainer.innerHTML = ''; 
+
+            const sortedKelainan = Object.entries(kelainanData).sort(([, a], [, b]) => b - a);
+
+            sortedKelainan.forEach(([kelainan, count]) => {
+                if (count > 0) {
+                    const card = document.createElement('div');
+                    card.className = 'bg-gray-100 p-4 rounded-lg shadow-sm text-center transition duration-300 hover:bg-blue-100 hover:shadow-md cursor-pointer';
+                    // [DIUBAH] Menambahkan total nilai pada kartu kelainan
+                    card.innerHTML = `
+                        <p class="font-semibold text-gray-700 text-sm">${kelainan}</p>
+                        <p class="text-2xl font-bold text-blue-600">${count}</p>
+                        <p class="text-md font-medium text-green-700 mt-1">Rp ${(kelainanJumlahData[kelainan] || 0).toLocaleString('id-ID')}</p>
+                    `;
+                    card.addEventListener('click', () => showKelainanDetails(kelainan));
+                    kelainanDetailsContainer.appendChild(card);
+                }
+            });
+
+            displayPetugasChart(petugasKelainanCounts);
+            resultsArea.classList.remove('hidden');
+        }
+
+        function displayPetugasChart(petugasData) {
+            const chartCanvas = document.getElementById('petugas-chart');
+            if (!chartCanvas) return;
+
+            if (petugasChartInstance) {
+                petugasChartInstance.destroy();
+            }
+
+            const sortedPetugas = Object.entries(petugasData).sort(([, a], [, b]) => b - a);
+            const labels = sortedPetugas.map(item => item[0]);
+            const counts = sortedPetugas.map(item => item[1]);
+
+            petugasChartInstance = new Chart(chartCanvas, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Jumlah Kelainan',
+                        data: counts,
+                        backgroundColor: 'rgba(239, 68, 68, 0.6)',
+                        borderColor: 'rgba(220, 38, 38, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            ticks: { precision: 0 }
+                        }
+                    },
+                    plugins: { legend: { display: false } },
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
+
+
+        function showKelainanDetails(kelainanName) {
+            const details = currentFilteredData.filter(row => (row.Kelainan ? String(row.Kelainan).trim() : '') === kelainanName);
+
+            modalTitle.textContent = `Rincian untuk: ${kelainanName} (${details.length} Pelanggan)`;
+            
+            let totalJumlahKelainan = 0; // [BARU] Untuk menghitung total di modal
+            
+            let tableHTML = `<div class="overflow-x-auto"><table class="w-full text-sm text-left text-gray-600">
+                <thead class="text-xs text-gray-700 uppercase bg-gray-100">
+                    <tr>
+                        <th scope="col" class="px-4 py-3">No.</th>
+                        <th scope="col" class="px-4 py-3">No. Sambungan</th>
+                        <th scope="col" class="px-4 py-3">Nama Pelanggan</th>
+                        <th scope="col" class="px-4 py-3">Alamat</th>
+                        <th scope="col" class="px-4 py-3">Pakai</th>
+                        <th scope="col" class="px-4 py-3">Lembar</th>
+                        <th scope="col" class="px-4 py-3">Jumlah</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+            
+            if (details.length > 0) {
+                details.forEach((pelanggan, index) => {
+                    const jumlah = pelanggan.Jumlah || 0;
+                    totalJumlahKelainan += jumlah; // [BARU] Akumulasi total
+                    tableHTML += `
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="px-4 py-2 font-medium text-gray-900">${index + 1}</td>
+                            <td class="px-4 py-2">${pelanggan['No. Sambungan'] || 'N/A'}</td>
+                            <td class="px-4 py-2">${pelanggan['Nama Pelanggan'] || 'N/A'}</td>
+                            <td class="px-4 py-2">${pelanggan.Alamat || 'N/A'}</td>
+                            <td class="px-4 py-2">${pelanggan.Pakai || 0}</td>
+                            <td class="px-4 py-2">${pelanggan.Lembar || 0}</td>
+                            <td class="px-4 py-2">${jumlah.toLocaleString('id-ID')}</td>
+                        </tr>`;
+                });
+            } else {
+                tableHTML += `<tr><td colspan="7" class="text-center p-4">Tidak ada data untuk ditampilkan.</td></tr>`;
+            }
+
+            // [BARU] Menambahkan footer tabel dengan total
+            tableHTML += `
+                </tbody>
+                <tfoot class="bg-gray-200 font-bold">
+                    <tr>
+                        <td colspan="6" class="px-4 py-2 text-right">Total Tunggakan</td>
+                        <td class="px-4 py-2">${totalJumlahKelainan.toLocaleString('id-ID')}</td>
+                    </tr>
+                </tfoot>
+            </table></div>`;
+            modalBody.innerHTML = tableHTML;
+            
+            modalFooter.innerHTML = ''; 
+
+            const printButton = document.createElement('button');
+            printButton.innerHTML = '🖨️ Print';
+            printButton.className = 'bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300';
+            printButton.onclick = () => printData(kelainanName);
+            modalFooter.appendChild(printButton);
+
+            const pdfButton = document.createElement('button');
+            pdfButton.innerHTML = '📄 Download PDF';
+            pdfButton.className = 'bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300';
+            pdfButton.onclick = () => downloadPDF(kelainanName, details);
+            modalFooter.appendChild(pdfButton);
+
+            openModal();
+        }
+
+        function printData(kelainanName) {
+            const printWindow = window.open('', '_blank');
+            const tableToPrint = modalBody.querySelector('table');
+            if (!tableToPrint) return;
+
+            printWindow.document.write('<html><head><title>Cetak Rincian - ' + kelainanName + '</title>');
+            printWindow.document.write('<style>body{font-family: sans-serif; margin: 20px;} table{width:100%; border-collapse:collapse;} th,td{border:1px solid #ddd; padding: 8px; text-align:left;} th{background-color:#f2f2f2;} tfoot{font-weight:bold; background-color:#e2e8f0;} h2{font-size: 1.2em;}</style>');
+            printWindow.document.write('</head><body>');
+            printWindow.document.write(`<h2>Rincian Pelanggan untuk Kelainan: ${kelainanName}</h2>`);
+            printWindow.document.write(tableToPrint.outerHTML);
+            printWindow.document.write('</body></html>');
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => { 
+                printWindow.print();
+                printWindow.close();
+            }, 250);
+        }
+
+        function downloadPDF(kelainanName, details) {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ orientation: "landscape" });
+
+            const tableColumn = ["No.", "No. Sambungan", "Nama Pelanggan", "Alamat", "Pakai", "Lembar", "Jumlah"];
+            const tableRows = [];
+            let totalJumlahKelainan = 0;
+
+            details.forEach((pelanggan, index) => {
+                const jumlah = pelanggan.Jumlah || 0;
+                totalJumlahKelainan += jumlah;
+                const pelangganData = [
+                    index + 1,
+                    pelanggan['No. Sambungan'] || 'N/A',
+                    pelanggan['Nama Pelanggan'] || 'N/A',
+                    pelanggan.Alamat || 'N/A',
+                    pelanggan.Pakai || 0,
+                    pelanggan.Lembar || 0,
+                    jumlah.toLocaleString('id-ID')
+                ];
+                tableRows.push(pelangganData);
+            });
+            
+            // [BARU] Menambahkan baris total ke PDF
+            const totalRow = ["", "", "", "", "", "Total", totalJumlahKelainan.toLocaleString('id-ID')];
+            tableRows.push(totalRow);
+
+            doc.autoTable({
+                head: [tableColumn],
+                body: tableRows,
+                startY: 20,
+                theme: 'grid',
+                headStyles: { fillColor: [22, 160, 133] },
+                // [BARU] Memberi style pada baris total
+                didDrawCell: (data) => {
+                    if (data.row.index === tableRows.length - 1) {
+                        doc.setFont(undefined, 'bold');
+                    }
+                }
+            });
+            doc.text(`Rincian Pelanggan untuk Kelainan: ${kelainanName}`, 14, 15);
+            doc.save(`Rincian_${kelainanName.replace(/ /g, "_")}.pdf`);
+        }
+
+        function openModal() {
+            modal.classList.remove('hidden');
+        }
+
+        function closeModal() {
+            modal.classList.add('hidden');
+            modalBody.innerHTML = '';
+            modalFooter.innerHTML = ''; 
+        }
+
+        function resetApp() {
+            excelData = [];
+            currentFilteredData = [];
+            fileInput.value = '';
+            fileNameDisplay.textContent = 'Belum ada file dipilih.';
+            petugasFilter.innerHTML = '<option>Unggah file dulu</option>';
+            petugasFilter.disabled = true;
+            analyzeButton.disabled = true;
+            resultsArea.classList.add('hidden');
+            if (petugasChartInstance) {
+                petugasChartInstance.destroy();
+                petugasChartInstance = null;
+            }
+        }
+
+    </script>
+</body>
+</html>
